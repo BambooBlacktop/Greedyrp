@@ -18,8 +18,10 @@ from fastapi.responses import FileResponse
 from TikTokLive import TikTokLiveClient
 from TikTokLive.events import FollowEvent, GiftEvent, LikeEvent
 
-UNIQUE_ID = os.environ["TIKTOK_UNIQUE_ID"].lstrip("@")
-SECRET = os.environ["BRIDGE_SECRET"]
+# Default to the configured creator so Railway still starts if a service
+# variable is temporarily missing. Environment values can still override it.
+UNIQUE_ID = os.getenv("TIKTOK_UNIQUE_ID", "greedyrp").lstrip("@")
+SECRET = os.getenv("BRIDGE_SECRET", "")
 events: deque[dict[str, Any]] = deque(maxlen=500)
 events_lock = threading.Lock()
 next_event_id = 0
