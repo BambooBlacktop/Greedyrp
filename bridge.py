@@ -8,10 +8,12 @@ import asyncio
 import os
 import threading
 from collections import deque
+from pathlib import Path
 from typing import Any
 
 import uvicorn
 from fastapi import FastAPI, Header, HTTPException
+from fastapi.responses import FileResponse
 from TikTokLive import TikTokLiveClient
 from TikTokLive.events import FollowEvent, GiftEvent, LikeEvent
 
@@ -19,6 +21,7 @@ UNIQUE_ID = os.environ["TIKTOK_UNIQUE_ID"].lstrip("@")
 SECRET = os.environ["BRIDGE_SECRET"]
 events: deque[dict[str, Any]] = deque(maxlen=500)
 events_lock = threading.Lock()
+next_event_id = 0
 
 
 def username(event: Any) -> str:
@@ -27,8 +30,10 @@ def username(event: Any) -> str:
 
 
 def publish(kind: str, user: str, **data: Any) -> None:
+    global next_event_id
     with events_lock:
-        events.append({"type": kind, "user": user, **data})
+        next_event_id += 1
+        events.append({"id": next_event_id, "type": kind, "user": user, **data})
 
 
 client: TikTokLiveClient = TikTokLiveClient(unique_id=f"@{UNIQUE_ID}")
@@ -72,9 +77,27 @@ def start_tiktok_listener() -> None:
 app = FastAPI(title="Stress Toys TikTok LIVE Bridge")
 
 
+@app.on_event("startup")
+def start_background_listener() -> None:
+    """Start the LIVE client when Uvicorn imports this app on Railway."""
+    threading.Thread(target=start_tiktok_listener, daemon=True).start()
+
+
 @app.get("/health")
 def health() -> dict[str, str]:
     return {"status": "ok", "creator": UNIQUE_ID}
+
+
+@app.get("/")
+@app.get("/overlay")
+def overlay() -> FileResponse:
+    return FileResponse(Path(__file__).with_name("overlay.html"))
+
+
+@app.get("/events")
+def public_events(after: int = 0) -> dict[str, list[dict[str, Any]]]:
+    with events_lock:
+        return {"events": [event for event in events if event["id"] > after]}
 
 
 @app.post("/poll")
@@ -88,5 +111,4 @@ def poll(x_bridge_key: str | None = Header(default=None)) -> dict[str, list[dict
 
 
 if __name__ == "__main__":
-    threading.Thread(target=start_tiktok_listener, daemon=True).start()
     uvicorn.run(app, host="0.0.0.0", port=int(os.getenv("PORT", "8080")))
