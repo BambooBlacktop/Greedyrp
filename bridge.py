@@ -14,7 +14,7 @@ from typing import Any
 
 import uvicorn
 from fastapi import FastAPI, Header, HTTPException
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, HTMLResponse
 from TikTokLive import TikTokLiveClient
 from TikTokLive.events import FollowEvent, GiftEvent, LikeEvent
 
@@ -100,13 +100,25 @@ def health() -> dict[str, str]:
 
 @app.get("/")
 @app.get("/overlay")
-def overlay() -> FileResponse:
-    return FileResponse(Path(__file__).with_name("overlay.html"))
+def overlay() -> HTMLResponse:
+    """The Rice Field screen, with an opt-in browser audio controller."""
+    page = Path(__file__).with_name("overlay.html").read_text(encoding="utf-8")
+    page = page.replace(
+        "</body>",
+        '<button id="sound-toggle">🔊 Enable peaceful farm sounds</button>'
+        '<script src="/audio.js"></script></body>',
+    )
+    return HTMLResponse(page)
 
 
 @app.get("/rice-field-live-background.png")
 def rice_field_background() -> FileResponse:
     return FileResponse(Path(__file__).with_name("rice-field-live-background.png"))
+
+
+@app.get("/audio.js")
+def overlay_audio() -> FileResponse:
+    return FileResponse(Path(__file__).with_name("audio.js"), media_type="application/javascript")
 
 
 @app.get("/events")
