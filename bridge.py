@@ -7,6 +7,7 @@ Set TIKTOK_UNIQUE_ID (with or without @) and BRIDGE_SECRET before running.
 import asyncio
 import os
 import threading
+import time
 from collections import deque
 from pathlib import Path
 from typing import Any
@@ -71,7 +72,14 @@ async def receive_gift(event: GiftEvent) -> None:
 
 
 def start_tiktok_listener() -> None:
-    client.run(fetch_gift_info=True)
+    # A LIVE may be offline when Railway starts. Keep reconnecting so the
+    # overlay becomes active as soon as @greedyrp goes live.
+    while True:
+        try:
+            client.run(fetch_gift_info=True)
+        except Exception as error:
+            print(f"TikTok listener reconnecting after error: {error}")
+            time.sleep(10)
 
 
 app = FastAPI(title="Stress Toys TikTok LIVE Bridge")
@@ -92,6 +100,11 @@ def health() -> dict[str, str]:
 @app.get("/overlay")
 def overlay() -> FileResponse:
     return FileResponse(Path(__file__).with_name("overlay.html"))
+
+
+@app.get("/rice-field-live-background.png")
+def rice_field_background() -> FileResponse:
+    return FileResponse(Path(__file__).with_name("rice-field-live-background.png"))
 
 
 @app.get("/events")
