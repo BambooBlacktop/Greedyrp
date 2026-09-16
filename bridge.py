@@ -16,7 +16,7 @@ import uvicorn
 from fastapi import FastAPI, Header, HTTPException
 from fastapi.responses import FileResponse, HTMLResponse
 from TikTokLive import TikTokLiveClient
-from TikTokLive.events import FollowEvent, GiftEvent, LikeEvent
+from TikTokLive.events import ConnectEvent, FollowEvent, GiftEvent, JoinEvent, LikeEvent, LiveEndEvent
 
 # Default to the configured creator so Railway still starts if a service
 # variable is temporarily missing. Environment values can still override it.
@@ -25,6 +25,7 @@ SECRET = os.getenv("BRIDGE_SECRET", "")
 events: deque[dict[str, Any]] = deque(maxlen=500)
 events_lock = threading.Lock()
 next_event_id = 0
+live_session = ""
 
 
 def username(event: Any) -> str:
@@ -40,6 +41,23 @@ def publish(kind: str, user: str, **data: Any) -> None:
 
 
 client: TikTokLiveClient = TikTokLiveClient(unique_id=f"@{UNIQUE_ID}")
+
+
+@client.on(ConnectEvent)
+async def receive_connect(event: ConnectEvent) -> None:
+    global live_session
+    live_session = f"{UNIQUE_ID}-{getattr(client, 'room_id', None) or int(time.time())}"
+    publish("session_start", "system", session=live_session)
+
+
+@client.on(LiveEndEvent)
+async def receive_live_end(event: LiveEndEvent) -> None:
+    publish("session_end", "system", session=live_session)
+
+
+@client.on(JoinEvent)
+async def receive_join(event: JoinEvent) -> None:
+    publish("join", username(event))
 
 
 @client.on(LikeEvent)
@@ -106,6 +124,7 @@ def overlay() -> HTMLResponse:
     page = page.replace(
         "</body>",
         '<button id="sound-toggle">🔊 Enable peaceful farm sounds</button>'
+        '<script src="/farm-events.js"></script>'
         '<script src="/audio.js"></script></body>',
     )
     return HTMLResponse(page)
@@ -119,6 +138,11 @@ def rice_field_background() -> FileResponse:
 @app.get("/audio.js")
 def overlay_audio() -> FileResponse:
     return FileResponse(Path(__file__).with_name("audio.js"), media_type="application/javascript")
+
+
+@app.get("/farm-events.js")
+def farm_events() -> FileResponse:
+    return FileResponse(Path(__file__).with_name("farm-events.js"), media_type="application/javascript")
 
 
 @app.get("/events")
