@@ -124,6 +124,7 @@ def overlay() -> HTMLResponse:
     page = page.replace(
         "</body>",
         '<button id="sound-toggle">🔊 Enable peaceful farm sounds</button>'
+        '<script src="/day-cycle.js"></script>'
         '<script src="/farm-events.js"></script>'
         '<script src="/audio.js"></script></body>',
     )
@@ -143,6 +144,11 @@ def overlay_audio() -> FileResponse:
 @app.get("/farm-events.js")
 def farm_events() -> FileResponse:
     return FileResponse(Path(__file__).with_name("farm-events.js"), media_type="application/javascript")
+
+
+@app.get("/day-cycle.js")
+def day_cycle() -> FileResponse:
+    return FileResponse(Path(__file__).with_name("day-cycle.js"), media_type="application/javascript")
 
 
 @app.get("/events")

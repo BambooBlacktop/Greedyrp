@@ -14,12 +14,19 @@
         const previous = localStorage.getItem('rice-live-session');
         if (previous !== event.session) {
           localStorage.setItem('rice-live-session', event.session);
+          localStorage.removeItem('rice-live-ended');
           localStorage.removeItem('rice-live-state');
+          localStorage.removeItem('rice-day-state');
           location.reload();
         }
       }
       if (event.type === 'session_end') {
+        const ended = String(event.id || 'ended');
+        const alreadyReset = localStorage.getItem('rice-live-ended') === ended;
+        localStorage.setItem('rice-live-ended', ended);
         localStorage.removeItem('rice-live-state');
+        localStorage.removeItem('rice-day-state');
+        if (!alreadyReset) location.reload();
         localStorage.removeItem('rice-live-session');
       }
     };
