@@ -3,8 +3,8 @@
   const LEDGER_KEY = 'rice-farmer-ledger';
   const TOTAL_DAYS = 10;
   const REST_SECONDS = 30;
-  const MAX_ACTIVE_FARMERS = 24;
-  const SHIFT_MS = 10 * 60 * 1000;
+  const ACTIVE_WINDOW_MS = 12 * 60 * 1000;
+  const WARNING_WINDOW_MS = 2 * 60 * 1000;
   const goalFor = day => 200 + ((day - 1) * 100);
   let game = JSON.parse(localStorage.getItem(KEY) || 'null') || {
     day: 1, progress: 0, phase: 'work', nextIncomeAt: Date.now() + 60000, restUntil: 0
@@ -17,7 +17,7 @@
     .day-chip{padding:7px 11px;background:#3f7a3bdd;border:2px solid #e7ffb8;border-radius:12px;box-shadow:0 3px 0 #255122}.day-chip.goal{background:#a56a34dd}.day-chip.timer{background:#467ba0dd}
     #night{position:fixed;inset:0;z-index:12;background:linear-gradient(#071331d9,#172554cc);opacity:0;pointer-events:none;transition:opacity 1s}.night #night{opacity:1}.night #sign,.night .stats,#day-hud{z-index:15}.night .farmer{filter:brightness(.52) saturate(.6);animation:sleep 1.6s ease-in-out infinite alternate}.night .farmer:after{content:'💤';position:absolute;top:-25px;right:-15px;font-size:18px;filter:none}@keyframes sleep{to{transform:rotate(-8deg) translateY(4px)}}
     #cutscene{position:fixed;left:50%;top:44%;transform:translate(-50%,-50%);z-index:16;width:min(82vw,820px);text-align:center;color:#fff8d6;font:1000 clamp(28px,5vw,70px) Trebuchet MS,Arial,sans-serif;text-shadow:0 5px #1b2543,0 9px 12px #0008;opacity:0;pointer-events:none;transition:opacity .5s}.night #cutscene{opacity:1}.night #cutscene small{display:block;margin-top:8px;font-size:clamp(16px,2.4vw,31px)}
-    #leaderboard{position:fixed;right:16px;top:29%;z-index:17;width:min(31vw,270px);padding:9px;border:3px solid #f7e6a5;border-radius:15px;background:#254d32df;color:#fff8df;font:800 clamp(11px,1.35vw,16px) Trebuchet MS,Arial,sans-serif;box-shadow:0 4px 0 #15331f}#leaderboard h2{margin:0 0 6px;font-size:1.05em;text-align:center}.leader{display:flex;gap:5px;align-items:center;margin:3px 0;padding:3px 5px;border-radius:7px;background:#ffffff17}.leader .name{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;flex:1}.leader .rice{color:#ffe77b}.hat{position:absolute;top:-22px;left:50%;font-size:20px;filter:drop-shadow(0 1px 1px #000)}
+    #leaderboard{position:fixed;right:16px;top:29%;z-index:17;width:min(31vw,270px);padding:9px;border:3px solid #f7e6a5;border-radius:15px;background:#254d32df;color:#fff8df;font:800 clamp(11px,1.35vw,16px) Trebuchet MS,Arial,sans-serif;box-shadow:0 4px 0 #15331f}#leaderboard h2{margin:0 0 6px;font-size:1.05em;text-align:center}.leader{display:flex;gap:5px;align-items:center;margin:3px 0;padding:3px 5px;border-radius:7px;background:#ffffff17}.leader .name{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;flex:1}.leader .rice{color:#ffe77b}.hat{position:absolute;top:-22px;left:50%;font-size:20px;filter:drop-shadow(0 1px 1px #000)}#farm-rules{position:fixed;left:16px;bottom:15px;z-index:17;max-width:min(46vw,430px);padding:10px 13px;border:3px solid #f7e6a5;border-radius:14px;background:#254d32e8;color:#fff8df;font:800 clamp(11px,1.35vw,16px) Trebuchet MS,Arial,sans-serif;line-height:1.35;box-shadow:0 4px 0 #15331f}#farm-rules b{color:#ffe77b}
   `;
   document.head.append(style);
   const hud = document.createElement('div'); hud.id = 'day-hud';
@@ -26,6 +26,9 @@
   const cutscene = document.createElement('div'); cutscene.id = 'cutscene';
   document.body.append(night, hud, cutscene);
   const board = document.createElement('aside'); board.id = 'leaderboard'; document.body.append(board);
+  const rules = document.createElement('aside'); rules.id = 'farm-rules';
+  rules.innerHTML = '<b>🌾 HOW TO FARM</b><br>Join = farmer · Follow = 👒 +3 rice/min<br>Comment, like, or gift at least once every 12 min to keep your farmer working.';
+  document.body.append(rules);
   const fmt = n => String(Math.max(0, n)).padStart(2, '0');
   const farmers = () => Object.keys(ledger).length;
   const save = () => localStorage.setItem(KEY, JSON.stringify(game));
@@ -50,31 +53,31 @@
   function pruneRoster() {
     const now = Date.now(); let changed = false;
     Object.entries(ledger).forEach(([name, worker]) => {
-      // Upgrade saves from the older version into timed shifts on first load.
-      if (!worker.activeUntil) { worker.joinedAt = now; worker.activeUntil = now + SHIFT_MS; changed = true; }
-      if (worker.activeUntil && worker.activeUntil <= now) {
+      // Remove the old experimental shift fields and migrate existing farmers.
+      if (worker.activeUntil) { delete worker.activeUntil; changed = true; }
+      if (!worker.lastActive) { worker.lastActive = now; changed = true; }
+      const inactiveFor = now - worker.lastActive;
+      if (inactiveFor >= ACTIVE_WINDOW_MS) {
         delete ledger[name]; hideFarmer(name); changed = true;
+        showToast('🌾 FARMER STOPPED WORKING', name + ' has been inactive, so their rice has been saved.');
+      } else if (inactiveFor >= ACTIVE_WINDOW_MS - WARNING_WINDOW_MS && !worker.warned) {
+        worker.warned = true; changed = true;
+        showToast('⏳ FARMER CHECK-IN', name + ', comment, like, or gift to keep your farmer working!');
       }
     });
-    while (Object.keys(ledger).length > MAX_ACTIVE_FARMERS) {
-      const oldest = Object.entries(ledger).sort((a,b) => a[1].joinedAt - b[1].joinedAt)[0];
-      if (!oldest) break;
-      delete ledger[oldest[0]]; hideFarmer(oldest[0]); changed = true;
-    }
     if (changed) saveLedger();
   }
   function register(name) {
     if (!name) return;
     pruneRoster();
     if (!ledger[name]) {
-      const oldest = Object.entries(ledger).sort((a,b) => a[1].joinedAt - b[1].joinedAt)[0];
-      if (Object.keys(ledger).length >= MAX_ACTIVE_FARMERS && oldest) {
-        delete ledger[oldest[0]]; hideFarmer(oldest[0]);
-        showToast('🔄 SHIFT CHANGE', oldest[0] + ' clocked out — ' + name + ' joined the crew!');
-      }
-      ledger[name] = { rice: 0, boost: 0, joinedAt: Date.now(), activeUntil: Date.now() + SHIFT_MS };
+      ledger[name] = { rice: 0, boost: 0, joinedAt: Date.now(), lastActive: Date.now(), warned: false };
       saveLedger(); drawBoard();
     }
+  }
+  function touch(name) {
+    if (!name || !ledger[name]) return;
+    ledger[name].lastActive = Date.now(); ledger[name].warned = false; saveLedger();
   }
   function upgrade(name) {
     register(name); ledger[name].boost = 3; saveLedger(); drawBoard(); setTimeout(() => decorate(name), 80);
@@ -82,6 +85,7 @@
   }
   window.addEventListener('rice:join', event => { register(event.detail.user); setTimeout(() => decorate(event.detail.user), 80); });
   window.addEventListener('rice:follow', event => upgrade(event.detail.user));
+  window.addEventListener('rice:activity', event => touch(event.detail.user));
   function showToast(title, detail) { if (window.toast) window.toast(title, detail, true); }
   function resetToNextDay() {
     if (game.day >= TOTAL_DAYS) { game.phase = 'complete'; save(); return; }
@@ -116,7 +120,7 @@
       pruneRoster();
       drawBoard();
       const left = Math.ceil((game.nextIncomeAt - now) / 1000);
-      document.querySelector('#income').textContent = '⏱ CREW ' + farmers() + '/' + MAX_ACTIVE_FARMERS + ' · IN ' + fmt(Math.floor(left / 60)) + ':' + fmt(left % 60);
+      document.querySelector('#income').textContent = '⏱ ' + farmers() + ' FARMERS · IN ' + fmt(Math.floor(left / 60)) + ':' + fmt(left % 60);
       cutscene.textContent = '';
       if (now >= game.nextIncomeAt) {
         const workers = Object.entries(ledger);
