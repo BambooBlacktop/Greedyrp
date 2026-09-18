@@ -16,7 +16,7 @@ import uvicorn
 from fastapi import FastAPI, Header, HTTPException
 from fastapi.responses import FileResponse, HTMLResponse
 from TikTokLive import TikTokLiveClient
-from TikTokLive.events import ConnectEvent, FollowEvent, GiftEvent, JoinEvent, LikeEvent, LiveEndEvent
+from TikTokLive.events import CommentEvent, ConnectEvent, FollowEvent, GiftEvent, JoinEvent, LikeEvent, LiveEndEvent
 
 # Default to the configured creator so Railway still starts if a service
 # variable is temporarily missing. Environment values can still override it.
@@ -58,6 +58,12 @@ async def receive_live_end(event: LiveEndEvent) -> None:
 @client.on(JoinEvent)
 async def receive_join(event: JoinEvent) -> None:
     publish("join", username(event))
+
+
+@client.on(CommentEvent)
+async def receive_comment(event: CommentEvent) -> None:
+    # A comment is a reliable in-LIVE activity heartbeat for the farmer system.
+    publish("comment", username(event))
 
 
 @client.on(LikeEvent)
