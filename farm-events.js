@@ -7,12 +7,15 @@
     const originalReact = window.react;
     window.react = event => {
       originalReact(event);
+      if (['like', 'comment', 'gift', 'follow'].includes(event.type)) {
+        window.dispatchEvent(new CustomEvent('rice:activity', { detail: { user: event.user } }));
+      }
       if (event.type === 'join') {
         // Everyone who enters the LIVE becomes a worker. Following upgrades
         // that same worker later rather than creating a duplicate.
         window.addFarmer(event.user);
         window.dispatchEvent(new CustomEvent('rice:join', { detail: { user: event.user } }));
-        window.toast('👋 HELLO, ' + event.user + '!', 'Follow to become a farmer — gifts grow the rice field!');
+        window.toast('👋 HELLO, ' + event.user + '!', 'You are a farmer! Comment, like, or gift every 12 min to keep working.');
       }
       if (event.type === 'follow') {
         window.dispatchEvent(new CustomEvent('rice:follow', { detail: { user: event.user } }));
